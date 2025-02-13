@@ -3,13 +3,22 @@ import cv2
 import tensorflow as tf
 import numpy as np
 import os
-from PIL import Image # type: ignore
+import gdown
+from PIL import Image  # type: ignore
 from layers import L1Dist
 
-# Load the trained Siamese model
+# Google Drive model download
+model_url = "https://drive.google.com/uc?id=1ozMj1fsAk3wsNbJ1UvfhZS2_u9dsELcB"
+model_path = "siamesemodelv2.h5"
+
+# Download the model if not already present
+if not os.path.exists(model_path):
+    with st.spinner("Downloading model... This may take a while ⏳"):
+        gdown.download(model_url, model_path, quiet=False)
+
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model('siamesemodelv2.h5', custom_objects={'L1Dist': L1Dist})
+    model = tf.keras.models.load_model(model_path, custom_objects={'L1Dist': L1Dist})
     return model
 
 model = load_model()
@@ -37,6 +46,7 @@ if st.button("Capture Image"):
     captured_image = capture_image()
     if captured_image:
         st.image(captured_image, caption="Captured Image", use_column_width=True)
+        os.makedirs("application_data/input_image", exist_ok=True)
         captured_image.save("application_data/input_image/input_image.jpg")
     else:
         st.warning("Failed to capture image!")
@@ -52,29 +62,30 @@ if st.button("Verify Face"):
 
         # Compare with stored verification images
         verification_images_path = "application_data/verification_images"
-        results = []
-
-        for img_name in os.listdir(verification_images_path):
-            validation_img = preprocess(Image.open(os.path.join(verification_images_path, img_name)))
-
-            # Make predictions
-            result = model.predict([np.expand_dims(input_img, axis=0), np.expand_dims(validation_img, axis=0)])
-            results.append(result)
-
-        # Calculate verification results
-        detection_threshold = 0.99
-        verification_threshold = 0.8
-        detection = np.sum(np.array(results) > detection_threshold)
-        verification = detection / len(results)
-        verified = verification > verification_threshold
-
-        # Display result
-        if verified:
-            st.success("✅ Face Verified!")
+        if not os.path.exists(verification_images_path) or not os.listdir(verification_images_path):
+            st.error("No verification images found! Please add images to the verification folder.")
         else:
-            st.error("❌ Face Not Recognized!")
+            results = []
+            for img_name in os.listdir(verification_images_path):
+                validation_img = preprocess(Image.open(os.path.join(verification_images_path, img_name)))
 
-        # Log details
-        st.write(f"Detection Score: {detection}")
-        st.write(f"Verification Score: {verification:.2f}")
+                # Make predictions
+                result = model.predict([np.expand_dims(input_img, axis=0), np.expand_dims(validation_img, axis=0)])
+                results.append(result)
 
+            # Calculate verification results
+            detection_threshold = 0.99
+            verification_threshold = 0.8
+            detection = np.sum(np.array(results) > detection_threshold)
+            verification = detection / len(results)
+            verified = verification > verification_threshold
+
+            # Display result
+            if verified:
+                st.success("✅ Face Verified!")
+            else:
+                st.error("❌ Face Not Recognized!")
+
+            # Log details
+            st.write(f"Detection Score: {detection}")
+            st.write(f"Verification Score: {verification:.2f}")
